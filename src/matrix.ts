@@ -14,6 +14,8 @@ import * as glutils from 'vistorian-core/src/glutils';
 const COLOR_HIGHLIGHT = 0x000000;
 const COLOR_SELECTION = 0xff0000;
 
+
+
 class NMargin {
   left: number;
   top: number;
@@ -44,6 +46,8 @@ interface Cell {
   col: number;
 }
 
+
+
 class MatrixMenu {
   private elem: JQuery;
   private matrix: Matrix;
@@ -56,12 +60,12 @@ class MatrixMenu {
     this.elem.append(
       `Zoom:  <input id="cellSizeBox" type="range" 
       name="cellSizeBox" min="3" max="20" 
-      value="` + this.matrix.cellSize + '"/>');
+      value="` + this.matrix.cellSize + '" onchange="trace.event(\'vis_34\',\'Matrix\',\'Zoom Range\',this.value)"/>');
     $('#cellSizeBox').change(this.updateCellSize);
     this.elem.append('<br/>');
     this.elem.append('<label>Label ordering:</label>');
     let orderingMenu = $("#networkcube-matrix-menu")
-      .append('<select id="labelOrdering"></select>')
+      .append('<select id="labelOrdering" onchange="trace.event(\'vis_35\',\'Matrix\',\'labelingType\',this.value)"></select>')
 
     // VS: Clicks on Manual
     $("#networkcube-matrix-menu")
@@ -74,7 +78,7 @@ class MatrixMenu {
     $('#labelOrdering').append('<option value="degree">Node degree</option>');
     $('#labelOrdering').append('<option value="similarity">Similarity</option>');
 
-    this.elem.append('<input value="Re-run" id="reorderBtn" type="button"/>');
+    this.elem.append('<input value="Re-run" id="reorderBtn" type="button" onclick="trace.event(\'vis_36\',\'Matrix\',\'Rerun Button\',\'Clicked\')"/>');
     $('#reorderBtn').click(this.reorderHandler);
   }
   updateCellSize() {
@@ -1060,9 +1064,10 @@ class Matrix {
       this.nodeOrder[d.id()] >= this.bbox.y0 &&
       this.nodeOrder[d.id()] <= this.bbox.y1);
     let topNodes = this.dgraph.nodes().visible().toArray();
-    topNodes = topNodes.filter((d: any) =>
-      this.nodeOrder[d.id()] >= this.bbox.x0 &&
-      this.nodeOrder[d.id()] <= this.bbox.x1);
+      topNodes = topNodes.filter((d: any) =>
+        this.nodeOrder[d.id()] >= this.bbox.x0 &&
+        this.nodeOrder[d.id()] <= this.bbox.x1);
+    
 
     let visibleData: { [id: number]: { [id: number]: dynamicgraph.NodePair } } = {};
     let row, col: number;
@@ -1073,7 +1078,17 @@ class Matrix {
       if (node.isVisible()) {
         row = this.nodeOrder[node.id()] - this.bbox.y0;
         for (let link of node.links().toArray()) {
-          let neighbor = link.source.id() == node.id() ? link.target : link.source;
+          var neighbor;
+          // if((link as any).directed == true){
+          //   console.log('directed', (link as any).directed)
+          //   neighbor = link.target;
+          //   if(link.target.id() == node.id()){
+          //     continue;
+          //   }
+          // }else{
+            neighbor = link.source.id() == node.id() ? link.target : link.source;
+          // }
+          // let neighbor = link.source.id() == node.id() ? link.target : link.source;
           if (neighbor.isVisible() &&
             this.nodeOrder[neighbor.id()] >= this.bbox.x0 &&
             this.nodeOrder[neighbor.id()] <= this.bbox.x1) {
@@ -1247,7 +1262,12 @@ let foreignObject: any = svg.append('foreignObject') // BEFORE d3.Selection
 let bbox = foreignObject.node().getBBox();
 
 let matrixMenu = new MatrixMenu(menuJQ, matrix);
-let matrixTimeSlider = new MatrixTimeSlider(tsJQ, matrix, vizWidth);
+if(matrix.dgraph.times().size() > 1){
+  let matrixTimeSlider;
+  matrixTimeSlider = new MatrixTimeSlider(tsJQ, matrix, vizWidth);
+  matrix.setTimeSlider(matrixTimeSlider);
+  messenger.addEventListener('timeRange', matrix.timeRangeHandler);
+}
 let matrixLabels = new MatrixLabels(svg, matrix.margin, matrix);
 let matrixVis = new MatrixVisualization(foreignObject, bbox.width, bbox.height, matrix);
 let matrixOverview = new MatrixOverview(svg, matrix.margin.left - 2, matrix.margin.top - 2, matrix);
@@ -1256,10 +1276,75 @@ let cellLabel = new CellLabel();
 
 matrix.setLabels(matrixLabels);
 matrix.setMenu(matrixMenu);
-matrix.setTimeSlider(matrixTimeSlider);
 matrix.setCellLabel(cellLabel);
 matrix.setOverview(matrixOverview);
 matrix.setVis(matrixVis);
-messenger.addEventListener('timeRange', matrix.timeRangeHandler);
+messenger.addEventListener(messenger.MESSAGE_SET_STATE, setStateHandler);
+messenger.addEventListener(messenger.MESSAGE_GET_STATE, getStateHandler);
 
 
+/////////////////
+//// UPDATES ////
+/////////////////
+
+
+function setStateHandler(m: messenger.SetStateMessage){
+  if (m.viewType=="matrix" ){
+ 
+    var state: messenger.MatrixControls = m.state as messenger.MatrixControls;    
+    // unpack / query that state object
+    // e.g., var params = state.params.
+    // set the parameters below:...  
+    
+   
+    
+
+    // set labelling type
+    matrix.reorderWorker(state.labellingType);
+
+     // set cell size (zoom)
+    matrix.updateCellSize(state.zoom);
+
+    // set time (start/end)
+    messenger.timeRange(state.timeSliderStart, state.timeSliderEnd, matrix.startTime, true);
+  //timeSlider.set(state.timeSliderStart, state.timeSliderEnd);
+
+    // camera
+  /*  webgl=state.webglState;
+      webgl.camera.position.x=state.camer_position_x ;
+      webgl.camera.position.y=state.camer_position_y  ;
+      webgl.camera.position.z=state.camer_position_z  ;
+  */
+  }
+
+}
+
+
+function getStateHandler( m: messenger.GetStateMessage){
+  if (m.viewType=="matrix" ){
+
+    /*         var webglState=webgl;
+        var camer_position_x=webgl.camera.position.x;
+        var camer_position_y=webgl.camera.position.y;
+        var camer_position_z=webgl.camera.position.z; */
+        let zoomValue: any = $('#cellSizeBox').val();
+        let orderType: any = $('#labelOrdering').val();
+
+        //matrix.cellSize
+      var matrixNetwork: messenger.NetworkControls=new messenger.MatrixControls("matrix",matrix.startTime.unixTime(),matrix.endTime.unixTime(),zoomValue,orderType);
+      
+/*       var bookmarksArray=JSON.parse(localStorage.getItem("vistorianBookmarks") || "[]");
+
+      if (m.bookmarkIndex!=bookmarksArray.length-1){
+          bookmarksArray[m.bookmarkIndex].controlsValues[1]=matrixNetwork;
+      }
+      else{
+          bookmarksArray[m.bookmarkIndex].controlsValues.push(matrixNetwork);
+        
+      }
+      localStorage.setItem("vistorianBookmarks", JSON.stringify(bookmarksArray)) */
+  
+       messenger.stateCreated(matrixNetwork,m.bookmarkIndex,m.viewType,m.isNewBookmark,m.typeOfMultiView);
+
+  }
+}
